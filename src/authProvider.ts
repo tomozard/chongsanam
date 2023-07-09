@@ -1,6 +1,9 @@
 import { AuthBindings } from "@refinedev/core";
 import nookies from "nookies";
 
+import { nhost } from 'src/utility';
+
+
 const mockUsers = [
   {
     name: "John Doe",
@@ -17,68 +20,87 @@ const mockUsers = [
 ];
 
 export const authProvider: AuthBindings = {
-  login: async ({ email, username, password, remember }) => {
-    // Suppose we actually send a request to the back end here.
-    const user = mockUsers[0];
-
-    if (user) {
-      nookies.set(null, "auth", JSON.stringify(user), {
-        maxAge: 30 * 24 * 60 * 60,
-        path: "/",
+  login: async ({ email, password }) => {
+      const { error } = await nhost.auth.signIn({
+          email,
+          password,
       });
-      return {
-        success: true,
-        redirectTo: "/",
-      };
-    }
 
-    return {
-      success: false,
-      error: {
-        name: "LoginError",
-        message: "Invalid username or password",
-      },
-    };
+      if (error) {
+          return {
+              success: false,
+              error: {
+                  message: error.message,
+                  name: "Login Error",
+              },
+          };
+      }
+
+      return {
+          success: true,
+          redirectTo: "/",
+      };
   },
   logout: async () => {
-    nookies.destroy(null, "auth");
-    return {
-      success: true,
-      redirectTo: "/login",
-    };
-  },
-  check: async (ctx: any) => {
-    const cookies = nookies.get(ctx);
-    if (cookies["auth"]) {
-      return {
-        authenticated: true,
-      };
-    }
+      const { error } = await nhost.auth.signOut();
+      if (error) {
+          return {
+              success: false,
+              error: {
+                  message: error.message,
+                  name: "Login Error",
+              },
+          };
+      }
 
-    return {
-      authenticated: false,
-      logout: true,
-      redirectTo: "/login",
-    };
-  },
-  getPermissions: async () => {
-    const auth = nookies.get()["auth"];
-    if (auth) {
-      const parsedUser = JSON.parse(auth);
-      return parsedUser.roles;
-    }
-    return null;
-  },
-  getIdentity: async () => {
-    const auth = nookies.get()["auth"];
-    if (auth) {
-      const parsedUser = JSON.parse(auth);
-      return parsedUser;
-    }
-    return null;
+      return {
+          success: true,
+          redirectTo: "/login",
+      };
   },
   onError: async (error) => {
-    console.error(error);
-    return { error };
+      if (error.status === 401) {
+          nhost.auth.refreshSession();
+      }
+
+      return {};
+  },
+  check: async () => {
+      // const isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+      // if (isAuthenticated) {
+          return {
+              authenticated: true,
+          };
+      // }
+
+      return {
+          authenticated: false,
+          error: {
+              message: "Check failed",
+              name: "Not authenticated",
+          },
+          logout: true,
+          redirectTo: "/login",
+      };
+  },
+  getPermissions: async () => {
+      const user = nhost.auth.getUser();
+      if (user) {
+          return user.roles;
+      }
+
+      return [];
+  },
+  getIdentity: async () => {
+      const user = nhost.auth.getUser();
+      if (user) {
+          return {
+              ...user,
+              name: user.displayName,
+              avatar: user.avatarUrl,
+          };
+      }
+
+      return null;
   },
 };
